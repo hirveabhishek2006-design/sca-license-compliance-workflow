@@ -1,0 +1,164 @@
+{
+  "name": "SCA License Compliance Checker",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [180, 400]
+    },
+    {
+      "parameters": {
+        "content": "## SCA License Compliance Checker\n\nBased on the beginner's guide workflow:\nSBOM -> Scan -> Compare vs Policy -> Jira ticket (if violation) -> Report\n\n**To customize:**\n1. Replace the mock data in \"Receive SBOM\" with a real SBOM read (HTTP Request / Read Binary File / GitHub node).\n2. Replace \"Scan with Trivy (Simulated)\" with an actual Trivy/FOSSology call (Execute Command or HTTP Request to a scanner service) once you have one available.\n3. Edit the `allowedLicenses` list in \"Compare with Company Policy\" to match your real company policy.\n4. Configure Jira credentials on the \"Create Jira Ticket\" node and set your real Project Key / Issue Type.",
+        "height": 300,
+        "width": 380
+      },
+      "id": "note1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [140, 40]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulates reading an SBOM (e.g. project-sbom.json)\n// Replace this with a real file read / HTTP request to pull your actual SBOM.\nconst packages = [\n  { package: \"React\", version: \"18.2\" },\n  { package: \"Axios\", version: \"1.7\" },\n  { package: \"Bootstrap\", version: \"5.3\" },\n  { package: \"Express\", version: \"4.19\" },\n  { package: \"OpenSSL\", version: \"3.0\" },\n  { package: \"Library XYZ\", version: \"2.1\" }\n];\n\nreturn packages.map(p => ({ json: p }));"
+      },
+      "id": "2",
+      "name": "Receive SBOM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulated Trivy/FOSSology scan: looks up the license for each package.\n// Replace this lookup with a real call to Trivy (Execute Command) or a scanner API.\nconst licenseMap = {\n  \"React\": \"MIT\",\n  \"Axios\": \"MIT\",\n  \"Bootstrap\": \"MIT\",\n  \"Express\": \"MIT\",\n  \"OpenSSL\": \"Apache-2.0\",\n  \"Library XYZ\": \"GPL-3.0\"\n};\n\nreturn items.map(item => {\n  const pkg = item.json.package;\n  const license = licenseMap[pkg] || \"Unknown\";\n  return { json: { ...item.json, license } };\n});"
+      },
+      "id": "3",
+      "name": "Scan with Trivy (Simulated)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compares each package's license against the company's allowed license policy.\nconst allowedLicenses = [\"MIT\", \"Apache-2.0\", \"BSD\", \"BSD-3-Clause\"];\n\nreturn items.map(item => {\n  const isAllowed = allowedLicenses.includes(item.json.license);\n  return {\n    json: {\n      ...item.json,\n      status: isAllowed ? \"Allowed\" : \"Restricted\"\n    }\n  };\n});"
+      },
+      "id": "4",
+      "name": "Compare with Company Policy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Aggregates results into a single compliance summary object.\nconst all = items;\nconst restricted = all.filter(i => i.json.status === \"Restricted\");\nconst allowedCount = all.length - restricted.length;\n\nreturn [{\n  json: {\n    project: \"Sample Project\",\n    packagesScanned: all.length,\n    allowed: allowedCount,\n    restricted: restricted.length,\n    complianceStatus: restricted.length > 0 ? \"FAILED\" : \"PASSED\",\n    violations: restricted.map(i => i.json),\n    violationsFound: restricted.length > 0\n  }\n}];"
+      },
+      "id": "5",
+      "name": "Build Compliance Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.violationsFound }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Restricted Licenses Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1380, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JIRA_BASE_URL }}/rest/api/3/issue",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "jiraSoftwareCloudApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  fields: {\n    project: { key: \"YOUR_PROJECT_KEY\" },\n    summary: \"License Compliance Violation - \" + $json.project,\n    issuetype: { name: \"Task\" },\n    description: \"Project: \" + $json.project + \"\\nRestricted packages found: \" + $json.restricted + \"\\n\\n\" + $json.violations.map(v => `- ${v.package}@${v.version} uses ${v.license} (Restricted)`).join(\"\\n\") + \"\\n\\nRecommended Action: Replace the flagged libraries with approved alternatives.\"\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Create Jira Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1620, 280]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "report",
+              "type": "object",
+              "value": "={{ {\n  \"Project\": $json.project,\n  \"Packages Scanned\": $json.packagesScanned,\n  \"Allowed\": $json.allowed,\n  \"Restricted\": $json.restricted,\n  \"Compliance Status\": $json.complianceStatus\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1860, 400]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Receive SBOM", "type": "main", "index": 0 }]]
+    },
+    "Receive SBOM": {
+      "main": [[{ "node": "Scan with Trivy (Simulated)", "type": "main", "index": 0 }]]
+    },
+    "Scan with Trivy (Simulated)": {
+      "main": [[{ "node": "Compare with Company Policy", "type": "main", "index": 0 }]]
+    },
+    "Compare with Company Policy": {
+      "main": [[{ "node": "Build Compliance Summary", "type": "main", "index": 0 }]]
+    },
+    "Build Compliance Summary": {
+      "main": [[{ "node": "Restricted Licenses Found?", "type": "main", "index": 0 }]]
+    },
+    "Restricted Licenses Found?": {
+      "main": [
+        [{ "node": "Create Jira Ticket", "type": "main", "index": 0 }],
+        [{ "node": "Generate Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Jira Ticket": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
